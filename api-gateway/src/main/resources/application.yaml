@@ -1,0 +1,49 @@
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: auth-service
+              uri: lb://AUTH-SERVICE
+              predicates:
+                - Path=/api/auth/**
+              filters:
+                - StripPrefix=1
+            - id: vecino-service
+              uri: lb://VECINO-SERVICE
+              predicates:
+                - Path=/api/vecino/**
+              filters:
+                - StripPrefix=1
+            - id: finanzas-service
+              uri: lb://FINANZAS-SERVICE
+              predicates:
+                - Path=/api/finanzas/**
+              filters:
+                - StripPrefix=1
+            - id: reserva-service
+              uri: lb://RESERVA-SERVICE
+              predicates:
+                - Path=/api/reserva/**
+              filters:
+                - StripPrefix=1
+
+server:
+  port: 8080
+
+eureka:
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    service-url:
+      defaultZone: ${EUREKA_CLIENT_SERVICEURL_DEFAULTZONE:http://localhost:8761/eureka/}
+
+jwt:
+  secret: ${JWT_SECRET:a98ba831524d428bdb59b2a9342de0716eaa901463593fb888e58001f522c74d}
+
+logging:
+  level:
+    com.nativa.api_gateway: INFO

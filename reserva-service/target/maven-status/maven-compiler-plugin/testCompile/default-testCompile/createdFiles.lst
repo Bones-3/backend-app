@@ -1,0 +1,7 @@
+com\nativa\reserva_service\service\EspacioServiceTest.class
+com\nativa\reserva_service\controller\EspacioControllerTest.class
+com\nativa\reserva_service\horario\controller\HorarioControllerTest.class
+com\nativa\reserva_service\ReservaServiceApplicationTests.class
+com\nativa\reserva_service\service\ReservaServiceTest.class
+com\nativa\reserva_service\controller\ReservaControllerTest.class
+com\nativa\reserva_service\horario\service\HorarioServiceTest.class

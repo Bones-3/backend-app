@@ -1,0 +1,115 @@
+services:
+  mysql-db:
+    image: mysql:8.0
+    container_name: junta-vecinal-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  eureka-service:
+    build: ./eureka-service
+    container_name: eureka-service
+    ports:
+      - "8761:8761"
+
+  auth-service:
+    build: ./auth-service
+    container_name: auth-service
+    ports:
+      - "8088:8088"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql-db:3306/db_auth?createDatabaseIfNotExist=true&serverTimezone=UTC
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: rootpassword
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-service:8761/eureka/
+      JWT_SECRET: ${JWT_SECRET:-a98ba831524d428bdb59b2a9342de0716eaa901463593fb888e58001f522c74d}
+      JWT_ACCESS_EXPIRATION: ${JWT_ACCESS_EXPIRATION:-900000}
+      JWT_REFRESH_EXPIRATION: ${JWT_REFRESH_EXPIRATION:-604800000}
+    depends_on:
+      mysql-db:
+        condition: service_healthy
+      eureka-service:
+        condition: service_started
+
+  vecino-service:
+    build: ./vecino-service
+    container_name: vecino-service
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql-db:3306/db_vecino_service?createDatabaseIfNotExist=true&serverTimezone=UTC
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: rootpassword
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-service:8761/eureka/
+      JWT_SECRET: ${JWT_SECRET:-a98ba831524d428bdb59b2a9342de0716eaa901463593fb888e58001f522c74d}
+    depends_on:
+      mysql-db:
+        condition: service_healthy
+      eureka-service:
+        condition: service_started
+
+  finanzas-service:
+    build: ./finanzas-service
+    container_name: finanzas-service
+    ports:
+      - "8086:8086"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql-db:3306/db_finanzas_service?createDatabaseIfNotExist=true&serverTimezone=UTC
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: rootpassword
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-service:8761/eureka/
+      JWT_SECRET: ${JWT_SECRET:-a98ba831524d428bdb59b2a9342de0716eaa901463593fb888e58001f522c74d}
+    depends_on:
+      mysql-db:
+        condition: service_healthy
+      eureka-service:
+        condition: service_started
+
+  reserva-service:
+    build: ./reserva-service
+    container_name: reserva-service
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql-db:3306/db_reserva_service?createDatabaseIfNotExist=true&serverTimezone=UTC
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: rootpassword
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-service:8761/eureka/
+      JWT_SECRET: ${JWT_SECRET:-a98ba831524d428bdb59b2a9342de0716eaa901463593fb888e58001f522c74d}
+    depends_on:
+      mysql-db:
+        condition: service_healthy
+      eureka-service:
+        condition: service_started
+
+  api-gateway:
+    build: ./api-gateway
+    container_name: api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-service:8761/eureka/
+      JWT_SECRET: ${JWT_SECRET:-a98ba831524d428bdb59b2a9342de0716eaa901463593fb888e58001f522c74d}
+    depends_on:
+      eureka-service:
+        condition: service_started
+      auth-service:
+        condition: service_started
+      vecino-service:
+        condition: service_started
+      finanzas-service:
+        condition: service_started
+      reserva-service:
+        condition: service_started
+
+volumes:
+  mysql_data:
