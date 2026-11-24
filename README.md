@@ -49,6 +49,8 @@ Usuarios de demostración:
 
 - `11.111.111-1` / `admin123`
 - `22.222.222-2` / `vecino123`
+- `33.333.333-3` / `tesorero123`
+- `44.444.444-4` / `secretario123`
 
 ## Endpoints protegidos
 
