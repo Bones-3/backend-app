@@ -10,6 +10,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -18,20 +19,22 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class GlobalExceptionHandler {
 
-    // 400 -  
+    // 400 -
     @ExceptionHandler(BadRequestException.class)
-    public ResponseEntity<ApiErrorResponse> handleBadRequest(BadRequestException exception, HttpServletRequest request) {
+    public ResponseEntity<ApiErrorResponse> handleBadRequest(BadRequestException exception,
+            HttpServletRequest request) {
         return build(HttpStatus.BAD_REQUEST, exception.getMessage(), request);
     }
 
-    // 400 - Errores de validacion 
-    @ExceptionHandler(MethodArgumentNotValidException.class) 
-    public ResponseEntity<ApiErrorResponse> handlerValidation(MethodArgumentNotValidException exception, HttpServletRequest request) {
+    // 400 - Errores de validacion
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ApiErrorResponse> handlerValidation(MethodArgumentNotValidException exception,
+            HttpServletRequest request) {
         String mensajeErrores = exception.getBindingResult()
-                        .getFieldErrors()
-                        .stream()
-                        .map(fe -> fe.getField() + ": " + fe.getDefaultMessage())
-                        .collect(Collectors.joining(", "));
+                .getFieldErrors()
+                .stream()
+                .map(fe -> fe.getField() + ": " + fe.getDefaultMessage())
+                .collect(Collectors.joining(", "));
 
         String mensajeFinal = "Errores de validación -> " + mensajeErrores;
         log.warn("400 Validation: {} | path: {}", mensajeErrores, request.getRequestURI());
@@ -39,26 +42,39 @@ public class GlobalExceptionHandler {
     }
 
     // 404 - Recurso no encontrado
-    @ExceptionHandler(ResourceNotFoundException.class)
-    public ResponseEntity<ApiErrorResponse> handleNotFound(ResourceNotFoundException exception, HttpServletRequest request) {
-        return build(HttpStatus.NOT_FOUND, exception.getMessage(), request);
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleNoResource(NoResourceFoundException ex, HttpServletRequest request) {
+        return build(HttpStatus.NOT_FOUND, "Ruta no encontrada.", request);
     }
 
     // 409 - Violacion de integridad de base de datos
     @ExceptionHandler(DataIntegrityViolationException.class)
-    public ResponseEntity<ApiErrorResponse> handleDataIntegrity(DataIntegrityViolationException ex, HttpServletRequest request) {
-        return build(HttpStatus.CONFLICT,"No se puede completar la operación: el registro está referenciado por otros datos o duplica una llave única.", request);
+    public ResponseEntity<ApiErrorResponse> handleDataIntegrity(DataIntegrityViolationException ex,
+            HttpServletRequest request) {
+        String causa = String.valueOf(ex.getMostSpecificCause().getMessage()).toLowerCase();
+        log.warn("Integridad de datos: {} | path: {}", causa, request.getRequestURI());
+        if (causa.contains("duplicate") || causa.contains("unique")) {
+            return build(HttpStatus.CONFLICT, "Ya existe un vecino con ese RUT o correo.", request);
+        }
+        if (causa.contains("data too long") || causa.contains("value too long")) {
+            return build(HttpStatus.BAD_REQUEST, "Alguno de los valores supera el largo permitido.", request);
+        }
+        return build(HttpStatus.CONFLICT,
+                "No se puede completar la operación: el registro está referenciado por otros datos o viola una restricción.",
+                request);
     }
 
     @ExceptionHandler(AccessDeniedException.class)
-    public ResponseEntity<ApiErrorResponse> handleAccessDenied(AccessDeniedException exception, HttpServletRequest request) {
+    public ResponseEntity<ApiErrorResponse> handleAccessDenied(AccessDeniedException exception,
+            HttpServletRequest request) {
         return build(HttpStatus.FORBIDDEN, "No tiene permisos para realizar esta operación.", request);
     }
 
     // 500 - Error Interno inesperado
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiErrorResponse> handleGeneral(Exception exception, HttpServletRequest request) {
-        return build(HttpStatus.INTERNAL_SERVER_ERROR,"Error interno inesperado. Contacte al administrador.", request);
+        log.error("500 Error inesperado en {} {}", request.getMethod(), request.getRequestURI(), exception);
+        return build(HttpStatus.INTERNAL_SERVER_ERROR, "Error interno inesperado. Contacte al administrador.", request);
     }
 
     // Ayudante de respuesta unificado (DRY) utilizando OffsetDateTime
@@ -72,10 +88,8 @@ public class GlobalExceptionHandler {
                 .message(message)
                 .path(request.getRequestURI())
                 .build();
-                
+
         return new ResponseEntity<>(body, status);
     }
 
 }
-
-

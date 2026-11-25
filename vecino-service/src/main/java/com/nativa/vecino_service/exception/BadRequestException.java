@@ -1,7 +1,7 @@
 package com.nativa.vecino_service.exception;
 
-public class BadRequestException extends RuntimeException{
-    
+public class BadRequestException extends RuntimeException {
+
     public BadRequestException(String message) {
         super(message);
     }
@@ -10,4 +10,3 @@ public class BadRequestException extends RuntimeException{
         super(message, cause);
     }
 }
-

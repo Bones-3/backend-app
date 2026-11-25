@@ -18,7 +18,7 @@ public class VecinoRequest {
 
     @NotBlank(message = "El nombre es obligatorio")
     private String nombres;
-    
+
     @NotBlank(message = "El apellido es obligatorio")
     private String apellidos;
 
@@ -26,5 +26,7 @@ public class VecinoRequest {
     private String telefonoVecino;
 
     private Rol rol;
-}
 
+    private Boolean estadoVecino;
+
+}

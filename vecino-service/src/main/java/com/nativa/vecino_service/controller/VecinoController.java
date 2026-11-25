@@ -3,6 +3,7 @@ package com.nativa.vecino_service.controller;
 import com.nativa.vecino_service.dto.PaginaResponse;
 import com.nativa.vecino_service.dto.VecinoRequest;
 import com.nativa.vecino_service.dto.VecinoResponse;
+import com.nativa.vecino_service.dto.VecinoSyncRequest;
 import com.nativa.vecino_service.model.Rol;
 import com.nativa.vecino_service.service.VecinoService;
 import jakarta.validation.Valid;
@@ -26,7 +27,7 @@ public class VecinoController {
             @RequestParam(required = false) String texto,
             @RequestParam(required = false) Boolean activo,
             @RequestParam(required = false) Rol rol,
-            @PageableDefault(size = 20, sort = "apellidos") Pageable pageable) {
+            @PageableDefault(size = 20, sort = { "apellidos", "id" }) Pageable pageable) {
         return PaginaResponse.from(vecinoService.buscar(texto, activo, rol, pageable));
     }
 
@@ -45,6 +46,12 @@ public class VecinoController {
     @PreAuthorize("hasAnyRole('DIRECTIVA','SECRETARIO')")
     public VecinoResponse update(@PathVariable Long id, @Valid @RequestBody VecinoRequest request) {
         return vecinoService.updateVecino(id, request);
+    }
+
+    @PostMapping("/sincronizar")
+    @PreAuthorize("hasAnyRole('DIRECTIVA','SECRETARIO')")
+    public VecinoResponse sincronizar(@Valid @RequestBody VecinoSyncRequest request) {
+        return vecinoService.sincronizar(request);
     }
 
     @DeleteMapping("/{id}")
