@@ -56,13 +56,14 @@ Usuarios de demostración:
 
 ### Vecinos
 
-- `GET /api/vecino/vecinos?texto=&activo=&rol=&page=0&size=20&sort=nombre,asc`
+- `GET /api/vecino/vecinos?texto=&activo=&rol=&page=0&size=20`
 - `GET /api/vecino/vecinos/{id}`
+- `GET /api/vecino/vecinos/me`
 - `POST /api/vecino/vecinos`
 - `PUT /api/vecino/vecinos/{id}`
 - `DELETE /api/vecino/vecinos/{id}`
 
-Todos los roles pueden consultar. Solo `DIRECTIVA` y `SECRETARIO` pueden crear, editar o desactivar vecinos.
+`DIRECTIVA`, `TESORERO` y `SECRETARIO` pueden consultar el listado y los perfiles por ID. Un `VECINO` solo puede consultar su perfil mediante `/me`, que no devuelve RUT ni correo. Solo `DIRECTIVA` y `SECRETARIO` pueden crear, editar o desactivar vecinos.
 
 ### Reservas
 
@@ -77,7 +78,7 @@ Todos los roles pueden consultar. Solo `DIRECTIVA` y `SECRETARIO` pueden crear, 
 - `GET /api/reserva/reservas/app?usuarioId={id}`
 - `POST /api/reserva/reservas/app`
 
-Todos los roles autenticados pueden consultar y gestionar reservas. Solo `DIRECTIVA` y `SECRETARIO` administran espacios y horarios.
+`DIRECTIVA`, `TESORERO` y `SECRETARIO` pueden consultar el listado general. La consulta, edición y cancelación por ID están disponibles para el propietario de la reserva y para `DIRECTIVA` o `SECRETARIO`. La creación general está reservada a `DIRECTIVA` y `SECRETARIO`; los vecinos crean sus reservas mediante `/reservas/app`. Solo `DIRECTIVA` y `SECRETARIO` administran espacios y horarios.
 
 El endpoint `/reservas/app` usa directamente el contrato de la aplicación Android: `usuarioId`, `nombre`, `fecha` en milisegundos Unix, `horaInicioMin`, `horaFinMin`, `asistentes`, `observaciones`, `requiereProyector` y `aceptaReglamento`. Las reservas creadas desde la app se asignan al espacio `SALON`, ya que la interfaz móvil actual no permite escoger un espacio.
 
@@ -136,4 +137,19 @@ cd auth-service
 .\mvnw.cmd test
 ```
 
-Swagger se expone directamente en cada servicio bajo `/swagger-ui.html`; el cliente Android debe usar siempre las rutas del gateway indicadas arriba.
+## Acceso a Swagger
+
+1. Inicia los servicios desde la raíz del backend con `docker compose up --build` y comprueba en otra terminal que estén activos con `docker compose ps`.
+2. Abre en el navegador la interfaz del servicio que quieres consultar:
+
+   | Servicio | Desde el mismo equipo | Desde otro equipo de la red local |
+   |---|---|---|
+   | Autenticación | `http://localhost:8088/swagger-ui/index.html` | `http://<IP_DEL_EQUIPO>:8088/swagger-ui/index.html` |
+   | Vecinos | `http://localhost:8083/swagger-ui/index.html` | `http://<IP_DEL_EQUIPO>:8083/swagger-ui/index.html` |
+   | Finanzas | `http://localhost:8086/swagger-ui/index.html` | `http://<IP_DEL_EQUIPO>:8086/swagger-ui/index.html` |
+   | Reservas | `http://localhost:8082/swagger-ui/index.html` | `http://<IP_DEL_EQUIPO>:8082/swagger-ui/index.html` |
+
+3. Para conectarte desde otro dispositivo, ejecuta `ipconfig` en Windows y busca la dirección **IPv4** del equipo donde corre Docker. Sustituye `<IP_DEL_EQUIPO>` por esa dirección; por ejemplo, `http://192.168.1.10:8082/swagger-ui/index.html`. Ambos dispositivos deben estar en la misma red y el firewall debe permitir el puerto del servicio.
+4. Para probar endpoints protegidos, inicia sesión en Swagger de autenticación con `POST /auth/login`, copia el campo `accessToken` y pulsa **Authorize** en Swagger de Vecinos, Finanzas o Reservas. Pega solo el token; Swagger agrega el prefijo `Bearer`.
+
+El documento OpenAPI en JSON de cada servicio está en `http://localhost:<PUERTO>/v3/api-docs`; desde otro dispositivo también puedes sustituir `localhost` por la IPv4 del equipo. El gateway (`http://localhost:8080/api/`) enruta las llamadas de la aplicación, pero no publica Swagger. En Swagger las rutas se muestran sin el prefijo `/api` del gateway.

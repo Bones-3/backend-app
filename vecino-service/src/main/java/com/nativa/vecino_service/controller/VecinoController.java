@@ -9,8 +9,8 @@ import com.nativa.vecino_service.model.Rol;
 import com.nativa.vecino_service.service.VecinoService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.web.PageableDefault;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -31,7 +31,10 @@ public class VecinoController {
             @RequestParam(required = false) String texto,
             @RequestParam(required = false) Boolean activo,
             @RequestParam(required = false) Rol rol,
-            @PageableDefault(size = 20, sort = { "apellidos", "id" }) Pageable pageable) {
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        var pageable = PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 200)),
+                Sort.by("apellidos", "id"));
         return PaginaResponse.from(vecinoService.buscar(texto, activo, rol, pageable));
     }
 

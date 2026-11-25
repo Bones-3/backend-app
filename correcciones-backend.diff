@@ -1,0 +1,449 @@
+diff --git a/auth-service/src/test/java/com/example/auth_service/service/AuthServiceTest.java b/auth-service/src/test/java/com/example/auth_service/service/AuthServiceTest.java
+index 7f51368..afe147d 100644
+--- a/auth-service/src/test/java/com/example/auth_service/service/AuthServiceTest.java
++++ b/auth-service/src/test/java/com/example/auth_service/service/AuthServiceTest.java
+@@ -1,5 +1,6 @@
+ package com.example.auth_service.service;
+ 
++import com.example.auth_service.client.VecinoSyncClient;
+ import com.example.auth_service.dto.AuthResponse;
+ import com.example.auth_service.dto.RegisterRequest;
+ import com.example.auth_service.dto.RegisterResponse;
+@@ -32,6 +33,7 @@ class AuthServiceTest {
+     @Mock private TokenRepository tokenRepository;
+     @Mock private JwtUtil jwtUtil;
+     @Mock private PasswordEncoder passwordEncoder;
++    @Mock private VecinoSyncClient vecinoSyncClient;
+     @InjectMocks private AuthService authService;
+ 
+     private Credencial credencial;
+@@ -49,10 +51,11 @@ class AuthServiceTest {
+         credencial.setContrasenaUser("hash");
+         credencial.setActivo(true);
+         credencial.setRol(Rol.VECINO);
++        credencial.setVecinoId(25L);
+     }
+ 
+     private void mockTokens() {
+-        when(jwtUtil.generarAccessToken("111111111", Rol.VECINO)).thenReturn("access");
++        when(jwtUtil.generarAccessToken("111111111", Rol.VECINO, 25L)).thenReturn("access");
+         when(jwtUtil.generarRefreshToken("111111111", Rol.VECINO)).thenReturn("refresh-nuevo");
+         when(jwtUtil.extraerExpiracion("refresh-nuevo")).thenReturn(LocalDateTime.now().plusDays(7));
+         when(jwtUtil.getAccessExpirationSeconds()).thenReturn(900L);
+@@ -68,7 +71,7 @@ class AuthServiceTest {
+ 
+         assertThat(response.getToken()).isEqualTo("access");
+         assertThat(response.getRefreshToken()).isEqualTo("refresh-nuevo");
+-        assertThat(response.getUsuarioId()).isEqualTo(1L);
++        assertThat(response.getUsuarioId()).isEqualTo(25L);
+         assertThat(response.getNombre()).isEqualTo("Vecino Demo");
+         assertThat(response.getRol()).isEqualTo(Rol.VECINO);
+         verify(tokenRepository).save(any(Token.class));
+@@ -87,6 +90,7 @@ class AuthServiceTest {
+         RegisterRequest request = registroValido();
+         when(credencialRepository.findByRutUser("222222222")).thenReturn(Optional.empty());
+         when(passwordEncoder.encode("clave123")).thenReturn("hash");
++        when(vecinoSyncClient.obtenerVecinoId("222222222", "Vecino Prueba", "922222222")).thenReturn(26L);
+         when(credencialRepository.save(any(Credencial.class))).thenAnswer(invocation -> {
+             Credencial guardada = invocation.getArgument(0);
+             guardada.setIdCredencial(2L);
+@@ -99,7 +103,8 @@ class AuthServiceTest {
+         verify(credencialRepository).save(captor.capture());
+         assertThat(captor.getValue().getRol()).isEqualTo(Rol.VECINO);
+         assertThat(captor.getValue().getRutUser()).isEqualTo("222222222");
+-        assertThat(response.getUsuarioId()).isEqualTo(2L);
++        assertThat(response.getUsuarioId()).isEqualTo(26L);
++        assertThat(captor.getValue().getVecinoId()).isEqualTo(26L);
+         assertThat(response.getNombre()).isEqualTo("Vecino Prueba");
+     }
+ 
+diff --git a/reserva-service/src/main/java/com/nativa/reserva_service/controller/ReservaController.java b/reserva-service/src/main/java/com/nativa/reserva_service/controller/ReservaController.java
+index 43b626e..7b49e1f 100644
+--- a/reserva-service/src/main/java/com/nativa/reserva_service/controller/ReservaController.java
++++ b/reserva-service/src/main/java/com/nativa/reserva_service/controller/ReservaController.java
+@@ -30,6 +30,7 @@ public class ReservaController {
+     private final ReservaService reservaService;
+ 
+     @GetMapping
++    @PreAuthorize("hasAnyRole('DIRECTIVA','TESORERO','SECRETARIO')")
+     public PaginaResponse<ReservaResponse> getAll(
+             @RequestParam(required = false) Long vecinoId,
+             @RequestParam(required = false) Long espacioId,
+@@ -42,8 +43,10 @@ public class ReservaController {
+     }
+ 
+     @GetMapping("/{id}")
+-    public ReservaResponse getById(@PathVariable Long id) {
+-        return reservaService.getById(id);
++    public ReservaResponse getById(@PathVariable Long id, Authentication authentication) {
++        ReservaResponse reserva = reservaService.getById(id);
++        autorizarPropietario(reserva.getVecinoId(), authentication);
++        return reserva;
+     }
+ 
+     @GetMapping("/app")
+@@ -60,17 +63,24 @@ public class ReservaController {
+     }
+ 
+     @PostMapping
++    @PreAuthorize("hasAnyRole('DIRECTIVA','SECRETARIO')")
+     public ResponseEntity<ReservaResponse> create(@Valid @RequestBody ReservaRequest request) {
+         return ResponseEntity.status(HttpStatus.CREATED).body(reservaService.create(request));
+     }
+ 
+     @PutMapping("/{id}")
+-    public ReservaResponse update(@PathVariable Long id, @Valid @RequestBody ReservaRequest request) {
++    public ReservaResponse update(@PathVariable Long id, @Valid @RequestBody ReservaRequest request,
++            Authentication authentication) {
++        ReservaResponse existente = reservaService.getById(id);
++        autorizarPropietario(existente.getVecinoId(), authentication);
++        // El cambio de dueño requiere una operación administrativa explícita.
++        request.setVecinoId(existente.getVecinoId());
+         return reservaService.update(id, request);
+     }
+ 
+     @DeleteMapping("/{id}")
+-    public ResponseEntity<Void> cancel(@PathVariable Long id) {
++    public ResponseEntity<Void> cancel(@PathVariable Long id, Authentication authentication) {
++        autorizarPropietario(reservaService.getById(id).getVecinoId(), authentication);
+         reservaService.cancel(id);
+         return ResponseEntity.noContent().build();
+     }
+@@ -82,8 +92,7 @@ public class ReservaController {
+      * distinto.
+      */
+     private Long resolverUsuarioId(Long solicitado, Authentication authentication) {
+-        boolean administra = authentication.getAuthorities().stream()
+-                .anyMatch(a -> a.getAuthority().equals("ROLE_DIRECTIVA") || a.getAuthority().equals("ROLE_SECRETARIO"));
++        boolean administra = administra(authentication);
+         if (administra && solicitado != null) {
+             return solicitado;
+         }
+@@ -92,4 +101,15 @@ public class ReservaController {
+         }
+         throw new AccessDeniedException("El token no identifica al vecino. Inicie sesión nuevamente.");
+     }
++
++    private void autorizarPropietario(Long propietarioId, Authentication authentication) {
++        if (!administra(authentication) && !propietarioId.equals(resolverUsuarioId(null, authentication))) {
++            throw new AccessDeniedException("No puede acceder a esta reserva");
++        }
++    }
++
++    private boolean administra(Authentication authentication) {
++        return authentication.getAuthorities().stream().anyMatch(a ->
++                a.getAuthority().equals("ROLE_DIRECTIVA") || a.getAuthority().equals("ROLE_SECRETARIO"));
++    }
+ }
+diff --git a/reserva-service/src/test/java/com/nativa/reserva_service/controller/ReservaControllerTest.java b/reserva-service/src/test/java/com/nativa/reserva_service/controller/ReservaControllerTest.java
+index 24aee2b..c1afc98 100644
+--- a/reserva-service/src/test/java/com/nativa/reserva_service/controller/ReservaControllerTest.java
++++ b/reserva-service/src/test/java/com/nativa/reserva_service/controller/ReservaControllerTest.java
+@@ -4,34 +4,58 @@ import com.nativa.reserva_service.dto.ReservaResponse;
+ import com.nativa.reserva_service.dto.AppReservaResponse;
+ import com.nativa.reserva_service.model.EstadoReserva;
+ import com.nativa.reserva_service.security.JwtUtil;
++import com.nativa.reserva_service.security.SecurityConfig;
+ import com.nativa.reserva_service.service.ReservaService;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+ import org.springframework.http.MediaType;
++import org.springframework.context.annotation.Import;
++import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
++import org.springframework.security.core.authority.SimpleGrantedAuthority;
++import org.springframework.security.core.Authentication;
++import com.nativa.reserva_service.dto.AppReservaRequest;
++import org.mockito.ArgumentCaptor;
+ import org.springframework.test.context.bean.override.mockito.MockitoBean;
+ import org.springframework.test.web.servlet.MockMvc;
+ import org.springframework.security.test.context.support.WithMockUser;
+ 
+ import java.time.LocalDate;
+ import java.time.LocalTime;
++import java.util.List;
+ 
+ import static org.mockito.ArgumentMatchers.any;
+ import static org.mockito.Mockito.when;
++import static org.mockito.Mockito.verify;
++import static org.mockito.Mockito.never;
++import static org.mockito.ArgumentMatchers.eq;
++import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
++import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
++import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
++import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+ 
+ @WebMvcTest(ReservaController.class)
+-@AutoConfigureMockMvc(addFilters = false)
++@AutoConfigureMockMvc
++@Import(SecurityConfig.class)
+ @WithMockUser(roles = "VECINO")
+ class ReservaControllerTest {
+     @Autowired private MockMvc mockMvc;
+     @MockitoBean private ReservaService reservaService;
+     @MockitoBean private JwtUtil jwtUtil;
+ 
++    private Authentication vecino(long id) {
++        var auth = new UsernamePasswordAuthenticationToken("rut", null,
++                List.of(new SimpleGrantedAuthority("ROLE_VECINO")));
++        auth.setDetails(id);
++        return auth;
++    }
++
+     @Test
++    @WithMockUser(roles = "DIRECTIVA")
+     void create_shouldReturnCreated() throws Exception {
+         LocalDate fecha = LocalDate.now().plusDays(1);
+         when(reservaService.create(any())).thenReturn(ReservaResponse.builder()
+@@ -66,6 +90,7 @@ class ReservaControllerTest {
+                 .estado(EstadoReserva.PENDIENTE).createdAt(fecha).build());
+ 
+         mockMvc.perform(post("/reserva/reservas/app")
++                        .with(authentication(vecino(10L)))
+                         .contentType(MediaType.APPLICATION_JSON)
+                         .content("""
+                                 {
+@@ -85,4 +110,61 @@ class ReservaControllerTest {
+                 .andExpect(jsonPath("$.horaInicioMin").value(600))
+                 .andExpect(jsonPath("$.estado").value("PENDIENTE"));
+     }
++
++    @Test
++    void vecinoNoPuedeListarTodasLasReservas() throws Exception {
++        mockMvc.perform(get("/reserva/reservas").with(authentication(vecino(10L))))
++                .andExpect(status().isForbidden());
++    }
++
++    @Test
++    void crearDesdeAppIgnoraUsuarioIdManipulado() throws Exception {
++        long fecha = LocalDate.now().plusDays(1).atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli();
++        mockMvc.perform(post("/reserva/reservas/app").with(authentication(vecino(10L)))
++                        .contentType(MediaType.APPLICATION_JSON).content("""
++                        {"usuarioId":20,"nombre":"Vecino Demo","fecha":%d,"horaInicioMin":600,
++                         "horaFinMin":660,"asistentes":10,"aceptaReglamento":true}
++                        """.formatted(fecha)))
++                .andExpect(status().isCreated());
++        ArgumentCaptor<AppReservaRequest> captor = ArgumentCaptor.forClass(AppReservaRequest.class);
++        verify(reservaService).createFromApp(captor.capture());
++        org.assertj.core.api.Assertions.assertThat(captor.getValue().getUsuarioId()).isEqualTo(10L);
++    }
++
++    @Test
++    void vecinoNoPuedeConsultarNiCancelarReservaAjena() throws Exception {
++        when(reservaService.getById(5L)).thenReturn(ReservaResponse.builder().id(5L).vecinoId(20L).build());
++        mockMvc.perform(get("/reserva/reservas/5").with(authentication(vecino(10L))))
++                .andExpect(status().isForbidden());
++        mockMvc.perform(delete("/reserva/reservas/5").with(authentication(vecino(10L))))
++                .andExpect(status().isForbidden());
++        verify(reservaService, never()).cancel(5L);
++    }
++
++    @Test
++    void vecinoNoPuedeEditarReservaAjena() throws Exception {
++        when(reservaService.getById(5L)).thenReturn(ReservaResponse.builder().id(5L).vecinoId(20L).build());
++        String contenido = """
++                {"vecinoId":20,"espacioId":1,"fecha":"%s","horaInicio":"10:00","horaFin":"11:00"}
++                """.formatted(LocalDate.now().plusDays(1));
++        mockMvc.perform(put("/reserva/reservas/5").with(authentication(vecino(10L)))
++                        .contentType(MediaType.APPLICATION_JSON).content(contenido))
++                .andExpect(status().isForbidden());
++        verify(reservaService, never()).update(eq(5L), any());
++    }
++
++    @Test
++    void vecinoNoPuedeCambiarPropietarioAlEditar() throws Exception {
++        when(reservaService.getById(5L)).thenReturn(ReservaResponse.builder().id(5L).vecinoId(10L).build());
++        String contenido = """
++                {"vecinoId":20,"espacioId":1,"fecha":"%s","horaInicio":"10:00","horaFin":"11:00"}
++                """.formatted(LocalDate.now().plusDays(1));
++        mockMvc.perform(put("/reserva/reservas/5").with(authentication(vecino(10L)))
++                        .contentType(MediaType.APPLICATION_JSON).content(contenido))
++                .andExpect(status().isOk());
++        org.mockito.ArgumentCaptor<com.nativa.reserva_service.dto.ReservaRequest> captor =
++                org.mockito.ArgumentCaptor.forClass(com.nativa.reserva_service.dto.ReservaRequest.class);
++        verify(reservaService).update(eq(5L), captor.capture());
++        org.assertj.core.api.Assertions.assertThat(captor.getValue().getVecinoId()).isEqualTo(10L);
++    }
+ }
+diff --git a/vecino-service/src/main/java/com/nativa/vecino_service/controller/VecinoController.java b/vecino-service/src/main/java/com/nativa/vecino_service/controller/VecinoController.java
+index 9bb43bf..60f88af 100644
+--- a/vecino-service/src/main/java/com/nativa/vecino_service/controller/VecinoController.java
++++ b/vecino-service/src/main/java/com/nativa/vecino_service/controller/VecinoController.java
+@@ -3,6 +3,7 @@ package com.nativa.vecino_service.controller;
+ import com.nativa.vecino_service.dto.PaginaResponse;
+ import com.nativa.vecino_service.dto.VecinoRequest;
+ import com.nativa.vecino_service.dto.VecinoResponse;
++import com.nativa.vecino_service.dto.MiPerfilResponse;
+ import com.nativa.vecino_service.dto.VecinoSyncRequest;
+ import com.nativa.vecino_service.model.Rol;
+ import com.nativa.vecino_service.service.VecinoService;
+@@ -13,6 +14,8 @@ import org.springframework.data.web.PageableDefault;
+ import org.springframework.http.HttpStatus;
+ import org.springframework.http.ResponseEntity;
+ import org.springframework.security.access.prepost.PreAuthorize;
++import org.springframework.security.access.AccessDeniedException;
++import org.springframework.security.core.Authentication;
+ import org.springframework.web.bind.annotation.*;
+ 
+ @RestController
+@@ -23,6 +26,7 @@ public class VecinoController {
+     private final VecinoService vecinoService;
+ 
+     @GetMapping
++    @PreAuthorize("hasAnyRole('DIRECTIVA','TESORERO','SECRETARIO')")
+     public PaginaResponse<VecinoResponse> buscar(
+             @RequestParam(required = false) String texto,
+             @RequestParam(required = false) Boolean activo,
+@@ -32,10 +36,21 @@ public class VecinoController {
+     }
+ 
+     @GetMapping("/{id}")
++    @PreAuthorize("hasAnyRole('DIRECTIVA','TESORERO','SECRETARIO')")
+     public VecinoResponse getById(@PathVariable Long id) {
+         return vecinoService.getVecinoById(id);
+     }
+ 
++    @GetMapping("/me")
++    public MiPerfilResponse miPerfil(Authentication authentication) {
++        if (!(authentication.getDetails() instanceof Long vecinoId)) {
++            throw new AccessDeniedException("El token no identifica al vecino. Inicie sesión nuevamente.");
++        }
++        VecinoResponse vecino = vecinoService.getVecinoById(vecinoId);
++        return new MiPerfilResponse(vecino.getId(), vecino.getNombre(), vecino.getApellido(),
++                vecino.getTelefonoVecino(), vecino.getRol());
++    }
++
+     @PostMapping
+     @PreAuthorize("hasAnyRole('DIRECTIVA','SECRETARIO')")
+     public ResponseEntity<VecinoResponse> create(@Valid @RequestBody VecinoRequest request) {
+diff --git a/vecino-service/src/main/java/com/nativa/vecino_service/security/JwtFilter.java b/vecino-service/src/main/java/com/nativa/vecino_service/security/JwtFilter.java
+index 65ea258..87fd32d 100644
+--- a/vecino-service/src/main/java/com/nativa/vecino_service/security/JwtFilter.java
++++ b/vecino-service/src/main/java/com/nativa/vecino_service/security/JwtFilter.java
+@@ -34,6 +34,7 @@ public class JwtFilter extends OncePerRequestFilter {
+                             jwtUtil.extraerCorreo(token),
+                             null,
+                             List.of(new SimpleGrantedAuthority("ROLE_" + rol)));
++                    auth.setDetails(jwtUtil.extraerVecinoId(token));
+                     SecurityContextHolder.getContext().setAuthentication(auth);
+                 }
+             }
+diff --git a/vecino-service/src/main/java/com/nativa/vecino_service/security/JwtUtil.java b/vecino-service/src/main/java/com/nativa/vecino_service/security/JwtUtil.java
+index 54018f5..f46002a 100644
+--- a/vecino-service/src/main/java/com/nativa/vecino_service/security/JwtUtil.java
++++ b/vecino-service/src/main/java/com/nativa/vecino_service/security/JwtUtil.java
+@@ -36,6 +36,11 @@ public class JwtUtil {
+         return claims(token).getSubject();
+     }
+ 
++    public Long extraerVecinoId(String token) {
++        Number valor = claims(token).get("vecinoId", Number.class);
++        return valor == null ? null : valor.longValue();
++    }
++
+     public String extraerRol(String token) {
+         return claims(token).get("rol", String.class);
+     }
+diff --git a/vecino-service/src/test/java/com/nativa/vecino_service/controller/VecinoControllerTest.java b/vecino-service/src/test/java/com/nativa/vecino_service/controller/VecinoControllerTest.java
+index 0ddf0dc..c174cf0 100644
+--- a/vecino-service/src/test/java/com/nativa/vecino_service/controller/VecinoControllerTest.java
++++ b/vecino-service/src/test/java/com/nativa/vecino_service/controller/VecinoControllerTest.java
+@@ -13,10 +13,13 @@ import org.springframework.data.domain.PageImpl;
+ import org.springframework.http.MediaType;
+ import org.springframework.context.annotation.Import;
+ import org.springframework.security.test.context.support.WithMockUser;
++import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
++import org.springframework.security.core.authority.SimpleGrantedAuthority;
+ import org.springframework.test.context.bean.override.mockito.MockitoBean;
+ import org.springframework.test.web.servlet.MockMvc;
+ 
+ import java.util.List;
++import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
+ 
+ import static org.mockito.ArgumentMatchers.*;
+ import static org.mockito.Mockito.when;
+@@ -24,7 +27,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
+ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+ 
+ @WebMvcTest(VecinoController.class)
+-@AutoConfigureMockMvc(addFilters = false)
++@AutoConfigureMockMvc
+ @Import(SecurityConfig.class)
+ @WithMockUser(roles = "DIRECTIVA")
+ class VecinoControllerTest {
+@@ -90,4 +93,24 @@ class VecinoControllerTest {
+                                 """))
+                 .andExpect(status().isForbidden());
+     }
++
++    @Test
++    @WithMockUser(roles = "VECINO")
++    void vecinoNoPuedeListarNiConsultarOtrosPerfiles() throws Exception {
++        mockMvc.perform(get("/vecino/vecinos")).andExpect(status().isForbidden());
++        mockMvc.perform(get("/vecino/vecinos/1")).andExpect(status().isForbidden());
++    }
++
++    @Test
++    void meDevuelveSoloPerfilPropioSinRutNiCorreo() throws Exception {
++        when(vecinoService.getVecinoById(1L)).thenReturn(vecino());
++        var auth = new UsernamePasswordAuthenticationToken("rut", null,
++                List.of(new SimpleGrantedAuthority("ROLE_VECINO")));
++        auth.setDetails(1L);
++        mockMvc.perform(get("/vecino/vecinos/me").with(authentication(auth)))
++                .andExpect(status().isOk())
++                .andExpect(jsonPath("$.id").value(1))
++                .andExpect(jsonPath("$.rut").doesNotExist())
++                .andExpect(jsonPath("$.correoVecino").doesNotExist());
++    }
+ }
+diff --git a/vecino-service/src/test/java/com/nativa/vecino_service/service/VecinoServiceTest.java b/vecino-service/src/test/java/com/nativa/vecino_service/service/VecinoServiceTest.java
+index 2bb2324..155f090 100644
+--- a/vecino-service/src/test/java/com/nativa/vecino_service/service/VecinoServiceTest.java
++++ b/vecino-service/src/test/java/com/nativa/vecino_service/service/VecinoServiceTest.java
+@@ -57,6 +57,7 @@ class VecinoServiceTest {
+                 .build();
+ 
+         vecinoRequest = new VecinoRequest();
++        vecinoRequest.setRut("12345678-5");
+         vecinoRequest.setCorreoVecino("test@test.com");
+         vecinoRequest.setNombres("Juan");
+         vecinoRequest.setApellidos("Perez");
+@@ -187,6 +188,7 @@ class VecinoServiceTest {
+     @Test
+     void updateVecino_shouldReturnUpdatedUser() {
+         VecinoRequest updateRequest = new VecinoRequest();
++        updateRequest.setRut("12345678-5");
+         updateRequest.setCorreoVecino("updated@test.com");
+         updateRequest.setNombres("Maria");
+         updateRequest.setApellidos("Gomez");
+@@ -261,6 +263,7 @@ class VecinoServiceTest {
+     void createVecino_shouldSaveVecinoWithCorreoValido() {
+         // Given
+         VecinoRequest request = new VecinoRequest();
++        request.setRut("12345678-5");
+         request.setCorreoVecino("cliente@nativa.com");
+         request.setNombres("Juan");
+         request.setApellidos("Pérez");
+diff --git a/auth-service/src/main/resources/db/migration/V5__unique_vecino_id.sql b/auth-service/src/main/resources/db/migration/V5__unique_vecino_id.sql
+new file mode 100644
+index 0000000..a934e99
+--- /dev/null
++++ b/auth-service/src/main/resources/db/migration/V5__unique_vecino_id.sql
+@@ -0,0 +1 @@
++ALTER TABLE credencial ADD CONSTRAINT uk_credencial_vecino_id UNIQUE (vecino_id);
+diff --git a/vecino-service/src/main/java/com/nativa/vecino_service/dto/MiPerfilResponse.java b/vecino-service/src/main/java/com/nativa/vecino_service/dto/MiPerfilResponse.java
+new file mode 100644
+index 0000000..b35b55f
+--- /dev/null
++++ b/vecino-service/src/main/java/com/nativa/vecino_service/dto/MiPerfilResponse.java
+@@ -0,0 +1,6 @@
++package com.nativa.vecino_service.dto;
++
++import com.nativa.vecino_service.model.Rol;
++
++public record MiPerfilResponse(Long id, String nombre, String apellido, String telefono, Rol rol) {
++}
