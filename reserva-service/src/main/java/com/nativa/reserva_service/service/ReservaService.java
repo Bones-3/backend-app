@@ -21,6 +21,7 @@ import java.time.Instant;
 import java.util.List;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -29,6 +30,7 @@ import org.springframework.data.jpa.domain.Specification;
 @Service
 @RequiredArgsConstructor
 public class ReservaService {
+    private static final ZoneId ZONA_RESERVAS = ZoneId.of("America/Santiago");
     private final ReservaRepository reservaRepository;
     private final EspacioRepository espacioRepository;
     private final ReservaMapper reservaMapper;
@@ -95,9 +97,7 @@ public class ReservaService {
         LocalTime horaInicio = LocalTime.of(request.getHoraInicioMin() / 60, request.getHoraInicioMin() % 60);
         LocalTime horaFin = LocalTime.of(request.getHoraFinMin() / 60, request.getHoraFinMin() % 60);
 
-        if (fecha.isBefore(LocalDate.now())) {
-            throw new BadRequestException("La fecha no puede estar en el pasado");
-        }
+        validarFecha(fecha);
         if (!horaFin.isAfter(horaInicio)) {
             throw new BadRequestException("La hora de término debe ser posterior a la hora de inicio");
         }
@@ -162,8 +162,15 @@ public class ReservaService {
     }
 
     private void validarRango(ReservaRequest request) {
+        validarFecha(request.getFecha());
         if (!request.getHoraFin().isAfter(request.getHoraInicio())) {
             throw new BadRequestException("La hora de término debe ser posterior a la hora de inicio");
+        }
+    }
+
+    private void validarFecha(LocalDate fecha) {
+        if (fecha.isBefore(LocalDate.now(ZONA_RESERVAS))) {
+            throw new BadRequestException("La fecha no puede estar en el pasado");
         }
     }
 

@@ -1,6 +1,5 @@
 package com.nativa.reserva_service.dto;
 
-import jakarta.validation.constraints.FutureOrPresent;
 import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
@@ -18,7 +17,6 @@ public class ReservaRequest {
     private Long espacioId;
 
     @NotNull(message = "La fecha es obligatoria")
-    @FutureOrPresent(message = "La fecha no puede estar en el pasado")
     private LocalDate fecha;
 
     @NotNull(message = "La hora de inicio es obligatoria")

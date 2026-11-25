@@ -20,6 +20,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.Optional;
 
@@ -123,6 +124,35 @@ class ReservaServiceTest {
         assertThat(response.getHoraInicioMin()).isEqualTo(600);
         assertThat(response.getAsistentes()).isEqualTo(12);
         assertThat(response.isRequiereProyector()).isTrue();
+    }
+
+    @Test
+    void createFromApp_shouldAcceptTodayInSantiago() {
+        AppReservaRequest appRequest = new AppReservaRequest();
+        LocalDate hoyEnSantiago = LocalDate.now(ZoneId.of("America/Santiago"));
+        appRequest.setUsuarioId(7L);
+        appRequest.setNombre("Vecino Prueba");
+        appRequest.setFecha(hoyEnSantiago.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli());
+        appRequest.setHoraInicioMin(600);
+        appRequest.setHoraFinMin(660);
+        appRequest.setAsistentes(12);
+        appRequest.setAceptaReglamento(true);
+        Espacio salon = new Espacio(2L, "Salón", TipoEspacio.SALON, true);
+
+        when(espacioRepository.findByTipoAndActivoTrue(TipoEspacio.SALON)).thenReturn(Optional.of(salon));
+        when(reservaRepository.save(any(Reserva.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertThat(reservaService.createFromApp(appRequest).getFecha()).isEqualTo(appRequest.getFecha());
+    }
+
+    @Test
+    void create_shouldRejectYesterdayInSantiago() {
+        request.setFecha(LocalDate.now(ZoneId.of("America/Santiago")).minusDays(1));
+
+        assertThatThrownBy(() -> reservaService.create(request))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("La fecha no puede estar en el pasado");
+        verifyNoInteractions(espacioRepository, reservaRepository);
     }
 
     @Test
