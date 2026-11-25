@@ -36,6 +36,11 @@ public class JwtUtil {
         return claims(token).getSubject();
     }
 
+    public Long extraerVecinoId(String token) {
+        Number valor = claims(token).get("vecinoId", Number.class);
+        return valor == null ? null : valor.longValue();
+    }
+
     public String extraerRol(String token) {
         return claims(token).get("rol", String.class);
     }

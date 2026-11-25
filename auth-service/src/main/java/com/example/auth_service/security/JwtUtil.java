@@ -34,20 +34,32 @@ public class JwtUtil {
     }
 
     public String generarAccessToken(String identidad, Rol rol) {
-        return generarToken(identidad, rol, ACCESS, accessExpiration);
+        return generarToken(identidad, rol, ACCESS, accessExpiration, null);
+    }
+
+    /**
+     * Incluye el claim "vecinoId" para que los demas servicios identifiquen al
+     * usuario sin confiar en el cliente.
+     */
+    public String generarAccessToken(String identidad, Rol rol, Long vecinoId) {
+        return generarToken(identidad, rol, ACCESS, accessExpiration, vecinoId);
     }
 
     public String generarRefreshToken(String identidad, Rol rol) {
-        return generarToken(identidad, rol, REFRESH, refreshExpiration);
+        return generarToken(identidad, rol, REFRESH, refreshExpiration, null);
     }
 
-    private String generarToken(String identidad, Rol rol, String tipo, long duracion) {
+    private String generarToken(String identidad, Rol rol, String tipo, long duracion, Long vecinoId) {
         Date ahora = new Date();
-        return Jwts.builder()
+        var builder = Jwts.builder()
                 .id(UUID.randomUUID().toString())
                 .subject(identidad)
                 .claim("rol", rol.name())
-                .claim("tipo", tipo)
+                .claim("tipo", tipo);
+        if (vecinoId != null) {
+            builder.claim("vecinoId", vecinoId);
+        }
+        return builder
                 .issuedAt(ahora)
                 .expiration(new Date(ahora.getTime() + duracion))
                 .signWith(signingKey())

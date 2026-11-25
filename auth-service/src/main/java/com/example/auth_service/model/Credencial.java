@@ -42,6 +42,9 @@ public class Credencial {
     @Column(name = "comuna", length = 80)
     private String comuna;
 
+    @Column(name = "vecino_id")
+    private Long vecinoId;
+
     @Column(name = "contrasena_user", nullable = false, length = 255)
     private String contrasenaUser;
 
@@ -52,5 +55,3 @@ public class Credencial {
     @Column(name = "rol", nullable = false, length = 20)
     private Rol rol;
 }
-
-

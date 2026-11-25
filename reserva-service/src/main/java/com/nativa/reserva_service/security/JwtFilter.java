@@ -34,6 +34,7 @@ public class JwtFilter extends OncePerRequestFilter {
                             jwtUtil.extraerCorreo(token),
                             null,
                             List.of(new SimpleGrantedAuthority("ROLE_" + rol)));
+                    auth.setDetails(jwtUtil.extraerVecinoId(token)); // Long o null
                     SecurityContextHolder.getContext().setAuthentication(auth);
                 }
             }

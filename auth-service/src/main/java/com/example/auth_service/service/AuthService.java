@@ -1,5 +1,6 @@
 package com.example.auth_service.service;
 
+import com.example.auth_service.client.VecinoSyncClient;
 import com.example.auth_service.dto.AuthResponse;
 import com.example.auth_service.dto.RegisterRequest;
 import com.example.auth_service.dto.RegisterResponse;
@@ -26,6 +27,7 @@ public class AuthService {
     private final TokenRepository tokenRepository;
     private final JwtUtil jwtUtil;
     private final PasswordEncoder passwordEncoder;
+    private final VecinoSyncClient vecinoSyncClient;
 
     @Transactional
     public AuthResponse login(String rut, String password) {
@@ -88,20 +90,37 @@ public class AuthService {
         nueva.setContrasenaUser(passwordEncoder.encode(request.getPassword()));
         nueva.setActivo(true);
         nueva.setRol(Rol.VECINO);
+        // Primero el vecino: si vecino-service no responde, no se crea la cuenta (503)
+        // y no quedan ids inconsistentes.
+        nueva.setVecinoId(vecinoSyncClient.obtenerVecinoId(rut, nueva.getNombre(), nueva.getTelefono()));
         Credencial guardada = credencialRepository.save(nueva);
         return RegisterResponse.builder()
-                .usuarioId(guardada.getIdCredencial())
+                .usuarioId(guardada.getVecinoId())
                 .rut(guardada.getRutUser())
                 .nombre(guardada.getNombre())
                 .mensaje("Usuario creado exitosamente")
                 .build();
     }
 
+    /**
+     * Cuentas anteriores a este cambio no tienen vecinoId: se obtiene (y guarda) la
+     * primera vez que inician sesion.
+     */
+    private Long resolverVecinoId(Credencial credencial) {
+        if (credencial.getVecinoId() == null) {
+            credencial.setVecinoId(vecinoSyncClient.obtenerVecinoId(
+                    credencial.getRutUser(), credencial.getNombre(), credencial.getTelefono()));
+            credencialRepository.save(credencial);
+        }
+        return credencial.getVecinoId();
+    }
+
     private AuthResponse emitirTokens(Credencial credencial) {
         String identidad = credencial.getRutUser() != null
                 ? credencial.getRutUser()
                 : credencial.getCorreoUser();
-        String accessToken = jwtUtil.generarAccessToken(identidad, credencial.getRol());
+        Long vecinoId = resolverVecinoId(credencial);
+        String accessToken = jwtUtil.generarAccessToken(identidad, credencial.getRol(), vecinoId);
         String refreshToken = jwtUtil.generarRefreshToken(identidad, credencial.getRol());
         Token token = new Token();
         token.setToken(refreshToken);
@@ -110,7 +129,7 @@ public class AuthService {
         token.setCredencial(credencial);
         tokenRepository.save(token);
         return AuthResponse.builder()
-                .usuarioId(credencial.getIdCredencial())
+                .usuarioId(vecinoId)
                 .token(accessToken)
                 .accessToken(accessToken)
                 .refreshToken(refreshToken)

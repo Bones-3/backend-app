@@ -83,6 +83,14 @@ public class VecinoService {
         return vecinoRepository.findAll(spec, sanearPaginacion(pageable)).map(vecinoMapper::toResponse);
     }
 
+    /**
+     * - Traduce sort=nombre/apellido a las propiedades reales y rechaza con 400 las
+     * desconocidas
+     * (antes terminaban en 500).
+     * - Agrega "id" como desempate: ordenar solo por apellidos es inestable y
+     * repite/omite filas entre páginas.
+     * - Limita el tamaño de página.
+     */
     private Pageable sanearPaginacion(Pageable pageable) {
         if (pageable == null || pageable.isUnpaged()) {
             return PageRequest.of(0, TAMANIO_DEFECTO, Sort.by("apellidos", "id"));
@@ -135,6 +143,7 @@ public class VecinoService {
     @Transactional
     public VecinoResponse createVecino(VecinoRequest request) {
         log.info("Iniciando la creación de un nuevo vecino con correo: {}", request.getCorreoVecino());
+        prepararYValidar(request, null);
         var vecino = vecinoMapper.toEntity(request);
         var vecinoGuardado = vecinoRepository.save(vecino);
         log.info("Vecino creado exitosamente con ID: {}", vecinoGuardado.getId());
@@ -185,6 +194,12 @@ public class VecinoService {
         log.info("Vecino con ID: {} deshabilitado (Eliminación lógica completada)", id);
     }
 
+    /**
+     * Crea el vecino si aún no existe para ese RUT (idempotente). Lo usa
+     * auth-service al registrar
+     * o iniciar sesión, para que quien se registra aparezca también en el listado
+     * de vecinos.
+     */
     @Transactional
     public VecinoResponse sincronizar(VecinoSyncRequest request) {
         String rut = RutUtils.normalizar(request.getRut());

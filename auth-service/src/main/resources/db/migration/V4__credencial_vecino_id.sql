@@ -1,0 +1,1 @@
+ALTER TABLE credencial ADD COLUMN vecino_id BIGINT NULL;
