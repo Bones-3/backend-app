@@ -1,5 +1,6 @@
 package com.example.auth_service.service;
 
+import com.example.auth_service.client.VecinoSyncClient;
 import com.example.auth_service.dto.AuthResponse;
 import com.example.auth_service.dto.RegisterRequest;
 import com.example.auth_service.dto.RegisterResponse;
@@ -32,6 +33,7 @@ class AuthServiceTest {
     @Mock private TokenRepository tokenRepository;
     @Mock private JwtUtil jwtUtil;
     @Mock private PasswordEncoder passwordEncoder;
+    @Mock private VecinoSyncClient vecinoSyncClient;
     @InjectMocks private AuthService authService;
 
     private Credencial credencial;
@@ -49,10 +51,11 @@ class AuthServiceTest {
         credencial.setContrasenaUser("hash");
         credencial.setActivo(true);
         credencial.setRol(Rol.VECINO);
+        credencial.setVecinoId(25L);
     }
 
     private void mockTokens() {
-        when(jwtUtil.generarAccessToken("111111111", Rol.VECINO)).thenReturn("access");
+        when(jwtUtil.generarAccessToken("111111111", Rol.VECINO, 25L)).thenReturn("access");
         when(jwtUtil.generarRefreshToken("111111111", Rol.VECINO)).thenReturn("refresh-nuevo");
         when(jwtUtil.extraerExpiracion("refresh-nuevo")).thenReturn(LocalDateTime.now().plusDays(7));
         when(jwtUtil.getAccessExpirationSeconds()).thenReturn(900L);
@@ -68,7 +71,7 @@ class AuthServiceTest {
 
         assertThat(response.getToken()).isEqualTo("access");
         assertThat(response.getRefreshToken()).isEqualTo("refresh-nuevo");
-        assertThat(response.getUsuarioId()).isEqualTo(1L);
+        assertThat(response.getUsuarioId()).isEqualTo(25L);
         assertThat(response.getNombre()).isEqualTo("Vecino Demo");
         assertThat(response.getRol()).isEqualTo(Rol.VECINO);
         verify(tokenRepository).save(any(Token.class));
@@ -87,6 +90,7 @@ class AuthServiceTest {
         RegisterRequest request = registroValido();
         when(credencialRepository.findByRutUser("222222222")).thenReturn(Optional.empty());
         when(passwordEncoder.encode("clave123")).thenReturn("hash");
+        when(vecinoSyncClient.obtenerVecinoId("222222222", "Vecino Prueba", "922222222")).thenReturn(26L);
         when(credencialRepository.save(any(Credencial.class))).thenAnswer(invocation -> {
             Credencial guardada = invocation.getArgument(0);
             guardada.setIdCredencial(2L);
@@ -99,7 +103,8 @@ class AuthServiceTest {
         verify(credencialRepository).save(captor.capture());
         assertThat(captor.getValue().getRol()).isEqualTo(Rol.VECINO);
         assertThat(captor.getValue().getRutUser()).isEqualTo("222222222");
-        assertThat(response.getUsuarioId()).isEqualTo(2L);
+        assertThat(response.getUsuarioId()).isEqualTo(26L);
+        assertThat(captor.getValue().getVecinoId()).isEqualTo(26L);
         assertThat(response.getNombre()).isEqualTo("Vecino Prueba");
     }
 

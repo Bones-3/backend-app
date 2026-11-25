@@ -30,6 +30,7 @@ public class ReservaController {
     private final ReservaService reservaService;
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('DIRECTIVA','TESORERO','SECRETARIO')")
     public PaginaResponse<ReservaResponse> getAll(
             @RequestParam(required = false) Long vecinoId,
             @RequestParam(required = false) Long espacioId,
@@ -42,8 +43,10 @@ public class ReservaController {
     }
 
     @GetMapping("/{id}")
-    public ReservaResponse getById(@PathVariable Long id) {
-        return reservaService.getById(id);
+    public ReservaResponse getById(@PathVariable Long id, Authentication authentication) {
+        ReservaResponse reserva = reservaService.getById(id);
+        autorizarPropietario(reserva.getVecinoId(), authentication);
+        return reserva;
     }
 
     @GetMapping("/app")
@@ -60,17 +63,24 @@ public class ReservaController {
     }
 
     @PostMapping
+    @PreAuthorize("hasAnyRole('DIRECTIVA','SECRETARIO')")
     public ResponseEntity<ReservaResponse> create(@Valid @RequestBody ReservaRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(reservaService.create(request));
     }
 
     @PutMapping("/{id}")
-    public ReservaResponse update(@PathVariable Long id, @Valid @RequestBody ReservaRequest request) {
+    public ReservaResponse update(@PathVariable Long id, @Valid @RequestBody ReservaRequest request,
+            Authentication authentication) {
+        ReservaResponse existente = reservaService.getById(id);
+        autorizarPropietario(existente.getVecinoId(), authentication);
+        // El cambio de dueño requiere una operación administrativa explícita.
+        request.setVecinoId(existente.getVecinoId());
         return reservaService.update(id, request);
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> cancel(@PathVariable Long id) {
+    public ResponseEntity<Void> cancel(@PathVariable Long id, Authentication authentication) {
+        autorizarPropietario(reservaService.getById(id).getVecinoId(), authentication);
         reservaService.cancel(id);
         return ResponseEntity.noContent().build();
     }
@@ -82,8 +92,7 @@ public class ReservaController {
      * distinto.
      */
     private Long resolverUsuarioId(Long solicitado, Authentication authentication) {
-        boolean administra = authentication.getAuthorities().stream()
-                .anyMatch(a -> a.getAuthority().equals("ROLE_DIRECTIVA") || a.getAuthority().equals("ROLE_SECRETARIO"));
+        boolean administra = administra(authentication);
         if (administra && solicitado != null) {
             return solicitado;
         }
@@ -91,5 +100,16 @@ public class ReservaController {
             return propio;
         }
         throw new AccessDeniedException("El token no identifica al vecino. Inicie sesión nuevamente.");
+    }
+
+    private void autorizarPropietario(Long propietarioId, Authentication authentication) {
+        if (!administra(authentication) && !propietarioId.equals(resolverUsuarioId(null, authentication))) {
+            throw new AccessDeniedException("No puede acceder a esta reserva");
+        }
+    }
+
+    private boolean administra(Authentication authentication) {
+        return authentication.getAuthorities().stream().anyMatch(a ->
+                a.getAuthority().equals("ROLE_DIRECTIVA") || a.getAuthority().equals("ROLE_SECRETARIO"));
     }
 }

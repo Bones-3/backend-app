@@ -57,6 +57,7 @@ class VecinoServiceTest {
                 .build();
 
         vecinoRequest = new VecinoRequest();
+        vecinoRequest.setRut("12345678-5");
         vecinoRequest.setCorreoVecino("test@test.com");
         vecinoRequest.setNombres("Juan");
         vecinoRequest.setApellidos("Perez");
@@ -187,6 +188,7 @@ class VecinoServiceTest {
     @Test
     void updateVecino_shouldReturnUpdatedUser() {
         VecinoRequest updateRequest = new VecinoRequest();
+        updateRequest.setRut("12345678-5");
         updateRequest.setCorreoVecino("updated@test.com");
         updateRequest.setNombres("Maria");
         updateRequest.setApellidos("Gomez");
@@ -261,6 +263,7 @@ class VecinoServiceTest {
     void createVecino_shouldSaveVecinoWithCorreoValido() {
         // Given
         VecinoRequest request = new VecinoRequest();
+        request.setRut("12345678-5");
         request.setCorreoVecino("cliente@nativa.com");
         request.setNombres("Juan");
         request.setApellidos("Pérez");

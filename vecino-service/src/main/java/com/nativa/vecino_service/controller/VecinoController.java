@@ -3,6 +3,7 @@ package com.nativa.vecino_service.controller;
 import com.nativa.vecino_service.dto.PaginaResponse;
 import com.nativa.vecino_service.dto.VecinoRequest;
 import com.nativa.vecino_service.dto.VecinoResponse;
+import com.nativa.vecino_service.dto.MiPerfilResponse;
 import com.nativa.vecino_service.dto.VecinoSyncRequest;
 import com.nativa.vecino_service.model.Rol;
 import com.nativa.vecino_service.service.VecinoService;
@@ -13,6 +14,8 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -23,6 +26,7 @@ public class VecinoController {
     private final VecinoService vecinoService;
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('DIRECTIVA','TESORERO','SECRETARIO')")
     public PaginaResponse<VecinoResponse> buscar(
             @RequestParam(required = false) String texto,
             @RequestParam(required = false) Boolean activo,
@@ -32,8 +36,19 @@ public class VecinoController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAnyRole('DIRECTIVA','TESORERO','SECRETARIO')")
     public VecinoResponse getById(@PathVariable Long id) {
         return vecinoService.getVecinoById(id);
+    }
+
+    @GetMapping("/me")
+    public MiPerfilResponse miPerfil(Authentication authentication) {
+        if (!(authentication.getDetails() instanceof Long vecinoId)) {
+            throw new AccessDeniedException("El token no identifica al vecino. Inicie sesión nuevamente.");
+        }
+        VecinoResponse vecino = vecinoService.getVecinoById(vecinoId);
+        return new MiPerfilResponse(vecino.getId(), vecino.getNombre(), vecino.getApellido(),
+                vecino.getTelefonoVecino(), vecino.getRol());
     }
 
     @PostMapping

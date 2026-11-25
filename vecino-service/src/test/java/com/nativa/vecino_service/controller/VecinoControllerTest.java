@@ -13,10 +13,13 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.http.MediaType;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.when;
@@ -24,7 +27,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(VecinoController.class)
-@AutoConfigureMockMvc(addFilters = false)
+@AutoConfigureMockMvc
 @Import(SecurityConfig.class)
 @WithMockUser(roles = "DIRECTIVA")
 class VecinoControllerTest {
@@ -89,5 +92,25 @@ class VecinoControllerTest {
                                 }
                                 """))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(roles = "VECINO")
+    void vecinoNoPuedeListarNiConsultarOtrosPerfiles() throws Exception {
+        mockMvc.perform(get("/vecino/vecinos")).andExpect(status().isForbidden());
+        mockMvc.perform(get("/vecino/vecinos/1")).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void meDevuelveSoloPerfilPropioSinRutNiCorreo() throws Exception {
+        when(vecinoService.getVecinoById(1L)).thenReturn(vecino());
+        var auth = new UsernamePasswordAuthenticationToken("rut", null,
+                List.of(new SimpleGrantedAuthority("ROLE_VECINO")));
+        auth.setDetails(1L);
+        mockMvc.perform(get("/vecino/vecinos/me").with(authentication(auth)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(1))
+                .andExpect(jsonPath("$.rut").doesNotExist())
+                .andExpect(jsonPath("$.correoVecino").doesNotExist());
     }
 }
